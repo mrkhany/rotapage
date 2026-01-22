@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rota Drag & Drop</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .rota-container {
+            display: grid;
+            grid-template-columns: 80px repeat(7, 1fr);
+            gap: 10px;
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow-x: auto;
+        }
+        .header-cell {
+            font-weight: bold;
+            text-align: center;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+        .day-cell {
+            min-height: 80px;
+            background-color: #fafafa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        .day-cell.drag-over {
+            background-color: #e0f2f1;
+            border: 2px dashed #009688;
+        }
+        .person-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            background-color: #374151;
+            color: white;
+            border-radius: 4px;
+            font-size: 1.2em;
+        }
+        .shift-block {
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            cursor: grab;
+            user-select: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+            color: #fff;
+            text-align: center;
+            font-weight: 600;
+            transition: transform 0.1s;
+        }
+        .shift-block:active {
+            cursor: grabbing;
+            transform: scale(0.95);
+        }
+        .shift-admin { background-color: #fbbf24; color: #000; } /* Yellow */
+        .shift-amu { background-color: #3b82f6; } /* Blue */
+        .shift-mdu { background-color: #10b981; } /* Green */
+        .shift-aecu { background-color: #ef4444; } /* Red */
+        
+        .legend {
+            margin-top: 20px;
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Rota Planner</h1>
+
+    <div class="rota-container" id="rota-grid">
+        <!-- Headers -->
+        <div class="header-cell">ID</div>
+        <div class="header-cell">Mon</div>
+        <div class="header-cell">Tue</div>
+        <div class="header-cell">Wed</div>
+        <div class="header-cell">Thu</div>
+        <div class="header-cell">Fri</div>
+        <div class="header-cell">Sat</div>
+        <div class="header-cell">Sun</div>
+
+        <!-- Rows will be injected by JS -->
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="legend-color shift-admin"></div> Admin</div>
+        <div class="legend-item"><div class="legend-color shift-amu"></div> AMU</div>
+        <div class="legend-item"><div class="legend-color shift-mdu"></div> MDU</div>
+        <div class="legend-item"><div class="legend-color shift-aecu"></div> AECU</div>
+    </div>
+
+    <script>
+        const initialData = [
+            { id: 1, shifts: { tue: ['Admin 12-2', 'AECU 2-10'], thu: ['AMU 8-12', 'MDU 12-5'], fri: ['Admin 8-10', 'AECU 10-7'] } },
+            { id: 2, shifts: { mon: ['Admin 8-10', 'AECU 10-7'], wed: ['Admin 12-2', 'AECU 2-10'], fri: ['AMU 8-12', 'MDU 12-5'] } },
+            { id: 3, shifts: { mon: ['Admin 12-2', 'AECU 2-10'], wed: ['AMU 8-12', 'MDU 12-5'], sat: ['AECU 9-8.30'], sun: ['AECU 9-8.30'] } },
+            { id: 4, shifts: { tue: ['Admin 8-10', 'AECU 10-7'], thu: ['Admin 12-2', 'AECU 2-10'] } },
+            { id: 5, shifts: { mon: ['AMU 8-12', 'MDU 12-5'], wed: ['Admin 8-10', 'AECU 10-7'], fri: ['Admin 12-2', 'AECU 2-10'] } },
+            { id: 6, shifts: { tue: ['AMU 8-12', 'MDU 12-5'], thu: ['Admin 8-10', 'AECU 10-7'] } }
+        ];
+
+        const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+        const grid = document.getElementById('rota-grid');
+
+        function getShiftClass(text) {
+            const lower = text.toLowerCase();
+            if (lower.includes('admin')) return 'shift-admin';
+            if (lower.includes('amu')) return 'shift-amu';
+            if (lower.includes('mdu')) return 'shift-mdu';
+            if (lower.includes('aecu')) return 'shift-aecu';
+            return '';
+        }
+
+        function createShiftElement(text) {
+            const div = document.createElement('div');
+            div.className = `shift-block ${getShiftClass(text)}`;
+            div.textContent = text;
+            div.draggable = true;
+            div.addEventListener('dragstart', handleDragStart);
+            return div;
+        }
+
+        function handleDragStart(e) {
+            e.dataTransfer.setData('text/plain', e.target.textContent);
+            e.dataTransfer.effectAllowed = 'move';
+            // We'll also store the source element to remove it if dropped elsewhere
+            window.draggedElement = e.target;
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            this.classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            this.classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over');
+            const data = e.dataTransfer.getData('text/plain');
+            
+            if (window.draggedElement) {
+                // If it's a move within the grid
+                this.appendChild(window.draggedElement);
+            } else {
+                // Fallback for external data (though not expected here)
+                const newShift = createShiftElement(data);
+                this.appendChild(newShift);
+            }
+            window.draggedElement = null;
+        }
+
+        // Initialize Grid
+        for (let i = 1; i <= 6; i++) {
+            // Person Label
+            const personDiv = document.createElement('div');
+            personDiv.className = 'person-label';
+            personDiv.textContent = i;
+            grid.appendChild(personDiv);
+
+            // Day Cells
+            const personData = initialData.find(p => p.id === i);
+            days.forEach(day => {
+                const dayCell = document.createElement('div');
+                dayCell.className = 'day-cell';
+                dayCell.dataset.day = day;
+                dayCell.dataset.person = i;
+                
+                dayCell.addEventListener('dragover', handleDragOver);
+                dayCell.addEventListener('dragleave', handleDragLeave);
+                dayCell.addEventListener('drop', handleDrop);
+
+                if (personData && personData.shifts[day]) {
+                    personData.shifts[day].forEach(shiftText => {
+                        dayCell.appendChild(createShiftElement(shiftText));
+                    });
+                }
+                
+                grid.appendChild(dayCell);
+            });
+        }
+    </script>
+</body>
+</html>
